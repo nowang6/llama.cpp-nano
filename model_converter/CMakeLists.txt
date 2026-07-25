@@ -1,0 +1,111 @@
+cmake_minimum_required(VERSION 3.14)
+project("llama-nano-converter" C CXX)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if (NOT XCODE AND NOT MSVC AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
+endif()
+
+message("CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}")
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+# Config options
+option(LLAMA_NATIVE "llama-nano: optimize for current CPU" ON)
+option(LLAMA_OPENMP "llama-nano: use OpenMP" ON)
+
+# For ggml subdirectory build
+set(GGML_STANDALONE OFF)
+set(GGML_NATIVE ${LLAMA_NATIVE})
+
+# Disable all non-CPU backends
+set(GGML_CUDA OFF)
+set(GGML_HIP OFF)
+set(GGML_METAL OFF)
+set(GGML_VULKAN OFF)
+set(GGML_SYCL OFF)
+set(GGML_RPC OFF)
+set(GGML_OPENCL OFF)
+set(GGML_CANN OFF)
+set(GGML_WEBGPU OFF)
+set(GGML_ET OFF)
+set(GGML_HEXAGON OFF)
+set(GGML_ZDNN OFF)
+set(GGML_ZENDNN OFF)
+set(GGML_OPENVINO OFF)
+set(GGML_VIRTGPU OFF)
+set(GGML_MUSA OFF)
+set(GGML_BACKEND_DL OFF)
+set(GGML_CPU_ALL_VARIANTS OFF)
+set(GGML_BLAS OFF)
+set(GGML_CPU_KLEIDIAI OFF)
+set(GGML_CPU_HBM OFF)
+set(GGML_LLAMAFILE OFF)
+
+# Disable tests/examples in ggml
+set(GGML_BUILD_TESTS OFF)
+set(GGML_BUILD_EXAMPLES OFF)
+
+# OpenMP
+if (LLAMA_OPENMP)
+    set(GGML_OPENMP ON)
+else()
+    set(GGML_OPENMP OFF)
+endif()
+
+# Add path to cmake modules (inference/ cmake modules first, then ggml's own)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../inference/cmake/")
+
+# Build ggml library (shared source in ../inference/ggml)
+add_subdirectory(../inference/ggml ggml)
+
+# Build llama library (shared source in ../inference/src)
+add_library(llama
+    ../inference/src/llama.cpp
+    ../inference/src/llama-adapter.cpp
+    ../inference/src/llama-arch.cpp
+    ../inference/src/llama-batch.cpp
+    ../inference/src/llama-chat.cpp
+    ../inference/src/llama-context.cpp
+    ../inference/src/llama-cparams.cpp
+    ../inference/src/llama-grammar.cpp
+    ../inference/src/llama-graph.cpp
+    ../inference/src/llama-hparams.cpp
+    ../inference/src/llama-impl.cpp
+    ../inference/src/llama-io.cpp
+    ../inference/src/llama-kv-cache.cpp
+    ../inference/src/llama-kv-cache-iswa.cpp
+    ../inference/src/llama-kv-cache-dsa.cpp
+    ../inference/src/llama-kv-cache-dsv4.cpp
+    ../inference/src/llama-memory.cpp
+    ../inference/src/llama-memory-hybrid.cpp
+    ../inference/src/llama-memory-hybrid-iswa.cpp
+    ../inference/src/llama-memory-recurrent.cpp
+    ../inference/src/llama-mmap.cpp
+    ../inference/src/llama-model-loader.cpp
+    ../inference/src/llama-model-saver.cpp
+    ../inference/src/llama-model.cpp
+    ../inference/src/llama-quant.cpp
+    ../inference/src/llama-sampler.cpp
+    ../inference/src/llama-vocab.cpp
+    ../inference/src/unicode-data.cpp
+    ../inference/src/unicode.cpp
+)
+
+# Add all model architectures (from inference/src/models/)
+file(GLOB LLAMA_MODELS_SOURCES "../inference/src/models/*.cpp")
+target_sources(llama PRIVATE ${LLAMA_MODELS_SOURCES})
+
+target_include_directories(llama PRIVATE ../inference/src)
+target_include_directories(llama PUBLIC ../inference/include)
+target_compile_features(llama PRIVATE cxx_std_17)
+target_link_libraries(llama PUBLIC ggml)
+
+# Build quantization tool
+add_executable(llama-quantize tools/quantize/quantize.cpp)
+target_link_libraries(llama-quantize PRIVATE llama ${CMAKE_THREAD_LIBS_INIT})
+target_compile_features(llama-quantize PRIVATE cxx_std_17)
+install(TARGETS llama-quantize RUNTIME)
