@@ -1,4 +1,13 @@
 cmake_minimum_required(VERSION 3.14)
+
+# Use clang/clang++ as the default compiler
+if (NOT CMAKE_C_COMPILER)
+    set(CMAKE_C_COMPILER "clang")
+endif()
+if (NOT CMAKE_CXX_COMPILER)
+    set(CMAKE_CXX_COMPILER "clang++")
+endif()
+
 project("llama-nano" C CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -112,6 +121,12 @@ if (LLAMA_BUILD_MAIN)
     target_compile_features(llama-nano PRIVATE cxx_std_17)
     install(TARGETS llama-nano RUNTIME)
 endif()
+
+# Build quantization tool
+add_executable(llama-quantize quantize.cpp)
+target_link_libraries(llama-quantize PRIVATE llama ${CMAKE_THREAD_LIBS_INIT})
+target_compile_features(llama-quantize PRIVATE cxx_std_17)
+install(TARGETS llama-quantize RUNTIME)
 
 install(TARGETS llama LIBRARY)
 install(FILES include/llama.h DESTINATION include)
