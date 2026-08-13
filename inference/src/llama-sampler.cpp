@@ -809,6 +809,7 @@ llama_token llama_sampler_sample(struct llama_sampler * smpl, struct llama_conte
     const float *       sampled_logits = llama_get_sampled_logits_ith    (ctx, idx);
     const llama_token * sampled_ids    = llama_get_sampled_candidates_ith(ctx, idx);
 
+
     // If a backend sampler has already sampled a token, return it.
     if (sampled_token != LLAMA_TOKEN_NULL) {
         LLAMA_LOG_DEBUG("%s: Backend sampler selected token for idx %d. Skipping CPU samplers\n", __func__, idx);
@@ -847,6 +848,7 @@ llama_token llama_sampler_sample(struct llama_sampler * smpl, struct llama_conte
         }
     } else {
         const auto * logits = llama_get_logits_ith(ctx, idx);
+
         GGML_ASSERT(logits != nullptr);
         cur.resize(n_vocab);
         for (llama_token token_id = 0; token_id < n_vocab; token_id++) {

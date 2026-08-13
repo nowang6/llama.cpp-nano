@@ -115,12 +115,10 @@ target_compile_features(llama PRIVATE cxx_std_17)
 target_link_libraries(llama PUBLIC ggml)
 
 # Build inference binary
-if (LLAMA_BUILD_MAIN)
-    add_executable(llama-nano main.cpp)
-    target_link_libraries(llama-nano PRIVATE llama ${CMAKE_THREAD_LIBS_INIT})
-    target_compile_features(llama-nano PRIVATE cxx_std_17)
-    install(TARGETS llama-nano RUNTIME)
-endif()
+add_executable(llama-nano main.cpp)
+target_link_libraries(llama-nano PRIVATE llama ${CMAKE_THREAD_LIBS_INIT})
+target_compile_features(llama-nano PRIVATE cxx_std_17)
+install(TARGETS llama-nano RUNTIME)
 
 # Build quantization tool
 add_executable(llama-quantize quantize.cpp)
