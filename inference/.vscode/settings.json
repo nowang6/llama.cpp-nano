@@ -1,0 +1,14 @@
+{
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}/build",
+    "--background-index",
+    "--clang-tidy=false"
+  ],
+  "clangd.fallbackFlags": [
+    "-std=c++17",
+    "-I${workspaceFolder}/include",
+    "-I${workspaceFolder}/src",
+    "-I${workspaceFolder}/ggml/include",
+    "-I${workspaceFolder}/ggml/src"
+  ]
+}

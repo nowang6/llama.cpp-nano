@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug llama-nano",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/bin/llama-nano",
+      "args": ["-m", "/home/niwang/code/llama.cpp-nano/models/model-Q4_K_M.gguf", "你好"],
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        { "name": "LD_LIBRARY_PATH", "value": "${workspaceFolder}/build/bin" }
+      ],
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "preLaunchTask": "build-debug"
+    }
+  ]
+}
