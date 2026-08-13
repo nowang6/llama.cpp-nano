@@ -5,20 +5,7 @@
 #include <string>
 #include <vector>
 
-static void print_usage(int, char ** argv) {
-    printf("\n用法:\n");
-    printf("\n    %s -m model.gguf [-n n_predict] [-t temp] [prompt]\n", argv[0]);
-    printf("\n");
-}
 
-// Qwen3 chat template:
-// <|im_start|>system
-// {system}<|im_end|>
-// <|im_start|>user
-// {user}<|im_end|>
-// <|im_start|>assistant
-//
-// Qwen3 使用 ChatML 格式
 static std::string apply_chat_template(const std::string & user_msg) {
     return "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
            "<|im_start|>user\n" + user_msg + "<|im_end|>\n"
@@ -27,70 +14,11 @@ static std::string apply_chat_template(const std::string & user_msg) {
 
 int main(int argc, char ** argv) {
     // 解析命令行参数
-    std::string model_path;
-    std::string user_prompt;
+    std::string model_path = "/home/niwang/code/llama.cpp-nano/models/model-Q4_K_M.gguf";
+    std::string user_prompt = "你好";
+    std::string prompt = apply_chat_template(user_prompt);
     int n_predict = 256;
     float temperature = 0.6f;
-
-    {
-        int i = 1;
-        for (; i < argc; i++) {
-            if (strcmp(argv[i], "-m") == 0) {
-                if (i + 1 < argc) {
-                    model_path = argv[++i];
-                } else {
-                    print_usage(argc, argv);
-                    return 1;
-                }
-            } else if (strcmp(argv[i], "-n") == 0) {
-                if (i + 1 < argc) {
-                    try {
-                        n_predict = std::stoi(argv[++i]);
-                    } catch (...) {
-                        print_usage(argc, argv);
-                        return 1;
-                    }
-                } else {
-                    print_usage(argc, argv);
-                    return 1;
-                }
-            } else if (strcmp(argv[i], "-t") == 0) {
-                if (i + 1 < argc) {
-                    temperature = std::stof(argv[++i]);
-                } else {
-                    print_usage(argc, argv);
-                    return 1;
-                }
-            } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
-                print_usage(argc, argv);
-                return 0;
-            } else {
-                // prompt starts here
-                break;
-            }
-        }
-        if (model_path.empty()) {
-            print_usage(argc, argv);
-            return 1;
-        }
-        if (i < argc) {
-            user_prompt = argv[i++];
-            for (; i < argc; i++) {
-                user_prompt += " ";
-                user_prompt += argv[i];
-            }
-        }
-    }
-
-    // 构建带 chat template 的 prompt
-    std::string prompt;
-    if (user_prompt.empty()) {
-        // 没有用户 prompt，使用默认测试
-        user_prompt = "介绍你自己";
-        prompt = apply_chat_template(user_prompt);
-    } else {
-        prompt = apply_chat_template(user_prompt);
-    }
 
     // 加载后端 (CPU only)
     ggml_backend_load_all();

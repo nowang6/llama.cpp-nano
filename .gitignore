@@ -1,17 +1,4 @@
-# Build (CMake)
-build/
-cmake-build-*/
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-compile_commands.json
-CTestTestfile.cmake
-Makefile
-*.ninja
-.ninja_deps
-.ninja_log
-
-# Compiled binaries / libraries
+# === C / C++ build artifacts ===
 *.o
 *.obj
 *.a
@@ -22,51 +9,107 @@ Makefile
 *.dll
 *.exe
 *.out
+*.app
+*.elf
+*.wasm
+*.pdb
+*.ilk
+*.exp
+*.manifest
 
-# Python
-.venv/
-venv/
+# === CMake ===
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles/
+cmake-build-*/
+build/
+_build/
+out/
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+Makefile.cmake
+cmake_install.cmake
+install_manifest.txt
+_deps/
+
+# === Python ===
 __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
+*.egg
 .eggs/
 dist/
-*.egg
+build/
+*.whl
+pip-wheel-metadata/
+*.manifest
+*.spec
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.venv-*/
+
+# Python tools
 .pytest_cache/
 .mypy_cache/
+.dmypy.json
 .ruff_cache/
+.tox/
+.nox/
 .coverage
+.coverage.*
 htmlcov/
+.cache/
+.hypothesis/
 
-# Models & weights (large binary files)
-models/
+# === Model weights / data ===
 *.gguf
-*.safetensors
+*.ggml
 *.bin
+*.safetensors
 *.pt
 *.pth
-*.onnx
 *.ckpt
+*.h5
+*.onnx
+*.trt
+*.engine
+models/*/
+!models/.gitkeep
 
-# IDE / editors
+# Hugging Face / downloaded artifacts
+downloads/
+checkpoints/
+
+# === IDE / editor ===
 .idea/
-.vscode/
 *.swp
 *.swo
 *~
-.clangd/
-.cache/
-compile_flags.txt
-
-# OS
 .DS_Store
+Thumbs.db
+*.user
+*.sublime-*
+
+# === OS files ===
+.DS_Store
+.AppleDouble
+.LSOverride
 Thumbs.db
 Desktop.ini
 
-# Logs & temp
+# === Logs / temp ===
 *.log
 *.tmp
-*.temp
-core
-core.*
+tmp/
+temp/
+*.bak
+
+# === Project specific ===
+inference/demo
+inference/compile_commands.json
