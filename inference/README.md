@@ -317,6 +317,144 @@ sequenceDiagram
 
 ---
 
+## 主推理循环详图
+
+下面把主推理循环单独放大，展示一次 decode → 采样 → 输出 → 准备下一 batch 的完整时序。
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant M as main.cpp/main()
+    participant CTX as llama_context
+    participant MEM as llama_kv_cache/memory
+    participant GRF as llama_graph
+    participant ARC as model_arch<br/>(e.g. qwen3.cpp)
+    participant SCH as ggml_scheduler
+    participant SM as llama_sampler
+    participant VOC as llama_vocab
+    participant BAT as llama_batch
+
+    Note over M: 当前持有 batch
+    M->>CTX: llama_decode(ctx, batch)
+    activate CTX
+
+    CTX->>CTX: llama_context::decode(batch_inp)
+    activate CTX
+    CTX->>CTX: balloc->init()
+    CTX->>MEM: memory_update(false)
+    activate MEM
+    MEM-->>CTX: KV cache shift/copy 完成
+    deactivate MEM
+    CTX->>MEM: memory->init_batch()
+    activate MEM
+    MEM-->>CTX: ubatch / KV slot 就绪
+    deactivate MEM
+    CTX->>CTX: output_reserve(n_outputs_all)
+
+    loop 按 ubatch 循环 (mctx->next())
+        CTX->>CTX: process_ubatch(ubatch, gtype, mctx, status)
+        activate CTX
+        CTX->>CTX: graph_params(...)
+
+        alt 计算图不可复用
+            CTX->>GRF: model.build_graph(gparams)
+            activate GRF
+            GRF->>ARC: build_arch_graph(params)
+            activate ARC
+            ARC->>ARC: build_inp_embd()
+            ARC->>ARC: build_inp_pos()
+            ARC->>ARC: build_attn_inp_kv()
+
+            loop 每一层 Transformer layer
+                ARC->>ARC: build_norm()
+                ARC->>ARC: build_qkv()
+                ARC->>ARC: build_norm(Q/K)
+                ARC->>ARC: ggml_rope_ext()
+                ARC->>ARC: build_attn()
+                ARC->>ARC: build_ffn()
+                ARC->>ARC: build_cvec()
+            end
+
+            ARC->>ARC: build_norm(output_norm)
+            ARC->>ARC: build_lora_mm(output)
+            ARC->>ARC: ggml_build_forward_expand()
+            ARC-->>GRF: gf
+            deactivate ARC
+
+            GRF->>GRF: build_pooling()
+            GRF->>GRF: build_sampling()
+            GRF->>GRF: set_outputs()
+            GRF-->>CTX: graph
+            deactivate GRF
+
+            CTX->>SCH: ggml_backend_sched_alloc_graph()
+            activate SCH
+            SCH-->>CTX: 图内存分配完成
+            deactivate SCH
+        end
+
+        CTX->>GRF: set_inputs(&ubatch)
+        activate GRF
+        GRF-->>CTX: token / pos / embd 写入
+        deactivate GRF
+
+        CTX->>CTX: graph_compute(gf, batched)
+        CTX->>SCH: ggml_backend_sched_graph_compute_async()
+        activate SCH
+        SCH-->>CTX: logits / 输出张量
+        deactivate SCH
+        deactivate CTX
+    end
+
+    CTX->>CTX: 提取输出 logits
+    deactivate CTX
+    CTX-->>M: decode 完成
+    deactivate CTX
+
+    M->>SM: llama_sampler_sample(smpl, ctx, -1)
+    activate SM
+    SM->>CTX: llama_get_logits_ith(ctx, idx)
+    activate CTX
+    CTX-->>SM: logits
+    deactivate CTX
+    SM->>SM: llama_sampler_apply(chain, cur_p)
+    Note right of SM: temp → top_k → top_p → dist
+    SM-->>M: new_token_id
+    deactivate SM
+
+    M->>VOC: llama_vocab_is_eog(vocab, token)
+    activate VOC
+    VOC-->>M: is_end?
+    deactivate VOC
+
+    alt 未结束
+        M->>VOC: llama_token_to_piece(vocab, token, buf)
+        activate VOC
+        VOC-->>M: piece 文本
+        deactivate VOC
+        M->>M: printf("%s", piece)
+        M->>BAT: llama_batch_get_one(&new_token_id, 1)
+        BAT-->>M: batch (下一 token)
+        Note over M: 继续下一轮循环
+    else 已结束
+        M->>M: break
+    end
+```
+
+### 关键步骤说明
+
+1. **`llama_decode()`**：主入口，把当前 batch 送入上下文。
+2. **`memory_update()` / `memory->init_batch()`**：管理 KV cache，包括缓存移位、拷贝、为当前 ubatch 分配 slot。
+3. **`process_ubatch()`**：真正的单个子 batch 处理单元。如果图参数发生变化，会触发重新建图。
+4. **`model.build_graph()` / `build_arch_graph()`**：按模型架构（如 Qwen3）逐层构建 Transformer 计算图。
+5. **`ggml_backend_sched_graph_compute_async()`**：调度器在 backend（此处为 CPU）上异步执行计算图。
+6. **`llama_sampler_sample()`**：从 logits 中按采样链选出下一个 token。
+7. **`llama_token_to_piece()`**：把 token id 解码为可见文本片段并输出。
+8. **`llama_batch_get_one()`**：把新 token 打包成下一轮的输入 batch。
+
+---
+
 ## 配置选项
 
 在 `CMakeLists.txt` 中可通过以下选项调整构建：
