@@ -139,25 +139,6 @@ llama_context::llama_context(
 
     cparams.ctx_other = nullptr;
 
-    // TODO: more generic
-    if (model.arch == LLM_ARCH_GEMMA4_ASSISTANT) {
-        if (params.ctx_other == nullptr) {
-            // TODO: change from runtime_error to llama_exception to avoid printing error message
-            throw std::runtime_error("Gemma4Assistant requires ctx_other to be set (this warning is normal during memory fitting)");
-        }
-
-        cparams.ctx_other = params.ctx_other;
-    }
-
-    if (model.arch == LLM_ARCH_EAGLE3 || model.arch == LLM_ARCH_DFLASH) {
-        if (model.tok_embd == nullptr || model.output == nullptr) {
-            if (params.ctx_other == nullptr) {
-                throw std::runtime_error(model.arch_name() + " requires ctx_other to be set (this warning is normal during memory fitting)");
-            }
-            cparams.ctx_other = params.ctx_other;
-        }
-    }
-
     // Initialize backend samplers here so they are part of the sampling graph
     // before the reserve passes run later in this function. This avoids a later
     // re-reserve when graph nodes change.
@@ -203,13 +184,6 @@ llama_context::llama_context(
             // TODO: start reading the actual value of mscale and handle the case where it is not 1.0f
                   float mscale          = 1.0f;
             const float mscale_all_dims = hparams.rope_yarn_log_mul;
-
-            // [TAG_DEEPSEEK2_YARN_LOG_MUL_FIX]
-            // special-case DEEPSEEK v2:
-            // https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite-Chat/blob/main/config.json#L42-L43
-            if (model.arch == LLM_ARCH_DEEPSEEK2 && mscale_all_dims != 1.0f) {
-                mscale = mscale_all_dims;
-            }
 
             cparams.yarn_attn_factor = get_mscale(factor, mscale) / get_mscale(factor, mscale_all_dims);
 
@@ -1539,32 +1513,6 @@ int llama_context::encode(const llama_batch & batch_inp) {
         ggml_backend_tensor_get_async(backend_h, t_h_nextn, embd_nextn.data, 0, n_tokens*n_embd*sizeof(float));
     }
 
-    // TODO: hacky solution
-    if (model.arch == LLM_ARCH_T5 && t_embd) {
-        //cross.t_embd = t_embd;
-
-        synchronize();
-
-        cross.n_embd = t_embd->ne[0];
-        cross.n_enc  = t_embd->ne[1];
-        cross.v_embd.resize(cross.n_embd*cross.n_enc);
-        memcpy(cross.v_embd.data(), embd.data, ggml_nbytes(t_embd));
-
-        const auto & batch = balloc->get_batch();
-
-        // remember the sequence ids used during the encoding - needed for cross attention later
-        cross.seq_ids_enc.resize(n_tokens);
-        for (uint32_t i = 0; i < n_tokens; i++) {
-            cross.seq_ids_enc[i].clear();
-
-            for (int s = 0; s < batch.n_seq_id[i]; s++) {
-                const llama_seq_id seq_id = batch.seq_id[i][s];
-
-                cross.seq_ids_enc[i].insert(seq_id);
-            }
-        }
-    }
-
     return 0;
 }
 
@@ -2087,12 +2035,6 @@ uint32_t llama_context::output_reserve(int32_t n_outputs) {
     bool has_embd       = cparams.embeddings;
     bool has_embd_nextn = cparams.embeddings_nextn;
 
-    // TODO: hacky enc-dec support
-    if (model.arch == LLM_ARCH_T5) {
-        has_logits = true;
-        has_embd   = true;
-    }
-
     size_t backend_float_count = 0;
     size_t backend_token_count = 0;
     size_t embd_layer_inp_float_count = 0;
@@ -2334,13 +2276,7 @@ void llama_context::output_reorder() {
 //
 
 uint32_t llama_context::graph_max_nodes(uint32_t n_tokens) const {
-    if (model.arch == LLM_ARCH_QWEN3NEXT ||
-        model.arch == LLM_ARCH_KIMI_LINEAR ||
-        model.arch == LLM_ARCH_QWEN35 ||
-        model.arch == LLM_ARCH_QWEN35MOE ||
-        model.arch == LLM_ARCH_DEEPSEEK4) {
-        return std::max<uint32_t>(n_tokens * 40, 32u * model.n_tensors());
-    }
+    GGML_UNUSED(n_tokens);
     uint32_t res = std::max<uint32_t>(1024u, 8u*model.n_tensors());
     for (const auto & lora : model.loras) {
         res += lora->get_n_nodes();
@@ -3520,11 +3456,6 @@ llama_context * llama_init_from_model(
     if (params.n_ctx == 0 && model->hparams.n_ctx_train == 0) {
         LLAMA_LOG_ERROR("%s: n_ctx and model->hparams.n_ctx_train cannot both be zero\n", __func__);
         return nullptr;
-    }
-
-    if (params.flash_attn_type != LLAMA_FLASH_ATTN_TYPE_DISABLED && model->arch == LLM_ARCH_GROK) {
-        LLAMA_LOG_WARN("%s: flash_attn is not compatible with Grok - forcing off\n", __func__);
-        params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
     }
 
     if (model->split_mode() == LLAMA_SPLIT_MODE_TENSOR) {

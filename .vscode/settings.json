@@ -1,0 +1,19 @@
+{
+    "cmake.sourceDirectory": "/home/niwang/code/llama.cpp-nano/inference",
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "C_Cpp.autocomplete": "disabled",
+    "C_Cpp.errorSquiggles": "disabled",
+    "clangd.path": "clangd",
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/inference/build",
+        "--background-index",
+        "--clang-tidy=false"
+    ],
+    "clangd.fallbackFlags": [
+        "-std=c++17",
+        "-I${workspaceFolder}/inference/include",
+        "-I${workspaceFolder}/inference/src",
+        "-I${workspaceFolder}/inference/ggml/include",
+        "-I${workspaceFolder}/inference/ggml/src"
+    ]
+}

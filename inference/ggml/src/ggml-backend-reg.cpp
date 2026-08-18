@@ -11,20 +11,6 @@
 #include <vector>
 #include <cctype>
 
-#ifdef _WIN32
-#    define WIN32_LEAN_AND_MEAN
-#    ifndef NOMINMAX
-#        define NOMINMAX
-#    endif
-#    include <windows.h>
-#elif defined(__APPLE__)
-#    include <mach-o/dyld.h>
-#    include <dlfcn.h>
-#else
-#    include <dlfcn.h>
-#    include <unistd.h>
-#endif
-
 // Backend registry (CPU only)
 #ifdef GGML_USE_CPU
 #include "ggml-cpu.h"
@@ -287,165 +273,11 @@ void ggml_backend_unload(ggml_backend_reg_t reg) {
     get_reg().unload_backend(reg, true);
 }
 
-static fs::path get_executable_path() {
-#if defined(__APPLE__)
-    // get executable path
-    std::vector<char> path;
-    uint32_t size;
-    while (true) {
-        size = path.size();
-        if (_NSGetExecutablePath(path.data(), &size) == 0) {
-            break;
-        }
-        path.resize(size);
-    }
-    std::string base_path(path.data(), size);
-    // remove executable name
-    auto last_slash = base_path.find_last_of('/');
-    if (last_slash != std::string::npos) {
-        base_path = base_path.substr(0, last_slash);
-    }
-    return base_path + "/";
-#elif defined(__linux__) || defined(__FreeBSD__)
-    std::string base_path = ".";
-    std::vector<char> path(1024);
-    while (true) {
-        // get executable path
-#    if defined(__linux__)
-        ssize_t len = readlink("/proc/self/exe", path.data(), path.size());
-#    elif defined(__FreeBSD__)
-        ssize_t len = readlink("/proc/curproc/file", path.data(), path.size());
-#    endif
-        if (len == -1) {
-            break;
-        }
-        if (len < (ssize_t) path.size()) {
-            base_path = std::string(path.data(), len);
-            // remove executable name
-            auto last_slash = base_path.find_last_of('/');
-            if (last_slash != std::string::npos) {
-                base_path = base_path.substr(0, last_slash);
-            }
-            break;
-        }
-        path.resize(path.size() * 2);
-    }
-
-    return base_path + "/";
-#elif defined(_WIN32)
-    std::vector<wchar_t> path(MAX_PATH);
-    DWORD len = GetModuleFileNameW(NULL, path.data(), path.size());
-    if (len == 0) {
-        return {};
-    }
-    std::wstring base_path(path.data(), len);
-    // remove executable name
-    auto last_slash = base_path.find_last_of('\\');
-    if (last_slash != std::string::npos) {
-        base_path = base_path.substr(0, last_slash);
-    }
-    return base_path + L"\\";
-#else
-    return {};
-#endif
-}
-
-static fs::path backend_filename_prefix() {
-#ifdef _WIN32
-    return fs::u8path("ggml-");
-#else
-    return fs::u8path("libggml-");
-#endif
-}
-
-static fs::path backend_filename_extension() {
-#ifdef _WIN32
-    return fs::u8path(".dll");
-#else
-    return fs::u8path(".so");
-#endif
-}
-
+// CPU backend is registered statically in ggml_backend_registry(); no scoring / dynamic variants.
 static ggml_backend_reg_t ggml_backend_load_best(const char * name, bool silent, const char * user_search_path) {
-    // enumerate all the files that match [lib]ggml-name-*.[so|dll] in the search paths
-    const fs::path name_path = fs::u8path(name);
-    const fs::path file_prefix = backend_filename_prefix().native() + name_path.native() + fs::u8path("-").native();
-    const fs::path file_extension = backend_filename_extension();
-
-    std::vector<fs::path> search_paths;
-    if (user_search_path == nullptr) {
-#ifdef GGML_BACKEND_DIR
-        search_paths.push_back(fs::u8path(GGML_BACKEND_DIR));
-#endif
-        // default search paths: executable directory, current directory
-        search_paths.push_back(get_executable_path());
-        search_paths.push_back(fs::current_path());
-    } else {
-        search_paths.push_back(fs::u8path(user_search_path));
-    }
-
-    int best_score = 0;
-    fs::path best_path;
-    std::error_code ec;
-
-    for (const auto & search_path : search_paths) {
-        if (!fs::exists(search_path, ec)) {
-            if (ec) {
-                GGML_LOG_DEBUG("%s: posix_stat(%s) failure, error-message: %s\n", __func__, path_str(search_path).c_str(), ec.message().c_str());
-            } else {
-                GGML_LOG_DEBUG("%s: search path %s does not exist\n", __func__, path_str(search_path).c_str());
-            }
-            continue;
-        }
-        fs::directory_iterator dir_it(search_path, fs::directory_options::skip_permission_denied);
-        for (const auto & entry : dir_it) {
-            if (entry.is_regular_file(ec)) {
-                auto filename = entry.path().filename();
-                auto ext = entry.path().extension();
-                if (filename.native().find(file_prefix) == 0 && ext == file_extension) {
-                    dl_handle_ptr handle { dl_load_library(entry) };
-                    if (!handle && !silent) {
-                        GGML_LOG_ERROR("%s: failed to load %s: %s\n", __func__, path_str(entry.path()).c_str(), dl_error());
-                    }
-                    if (handle) {
-                        auto score_fn = (ggml_backend_score_t) dl_get_sym(handle.get(), "ggml_backend_score");
-                        if (score_fn) {
-                            int s = score_fn();
-#ifndef NDEBUG
-                            GGML_LOG_DEBUG("%s: %s score: %d\n", __func__, path_str(entry.path()).c_str(), s);
-#endif
-                            if (s > best_score) {
-                                best_score = s;
-                                best_path = entry.path();
-                            }
-                        } else {
-                            if (!silent) {
-                                GGML_LOG_INFO("%s: failed to find ggml_backend_score in %s\n", __func__, path_str(entry.path()).c_str());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (best_score == 0) {
-        // try to load the base backend
-        for (const auto & search_path : search_paths) {
-            fs::path filename = backend_filename_prefix().native() + name_path.native() + backend_filename_extension().native();
-            fs::path path = search_path / filename;
-            if (std::error_code ec; fs::exists(path, ec)) {
-                return get_reg().load_backend(path, silent);
-            } else {
-                if (ec) {
-                    GGML_LOG_DEBUG("%s: posix_stat(%s) failure, error-message: %s\n", __func__, path_str(path).c_str(), ec.message().c_str());
-                }
-            }
-        }
-        return nullptr;
-    }
-
-    return get_reg().load_backend(best_path, silent);
+    GGML_UNUSED(silent);
+    GGML_UNUSED(user_search_path);
+    return ggml_backend_reg_by_name(name);
 }
 
 void ggml_backend_load_all() {
@@ -453,12 +285,7 @@ void ggml_backend_load_all() {
 }
 
 void ggml_backend_load_all_from_path(const char * dir_path) {
-#ifdef NDEBUG
-    bool silent = true;
-#else
-    bool silent = false;
-#endif
-
-    // CPU only
-    ggml_backend_load_best("cpu", silent, dir_path);
+    GGML_UNUSED(dir_path);
+    // Fixed CPU backend only (already registered statically)
+    ggml_backend_load_best("cpu", true, nullptr);
 }
